@@ -3,6 +3,8 @@
 #include <cstdio>
 #include <string>
 //#include <Arduino.h>
+#include <esp_system.h>
+#include <esp_heap_caps.h>
 #include "esphome/core/log.h"
 #include "esphome/core/helpers.h"
 #include "esphome/core/hal.h"
@@ -2962,17 +2964,17 @@ void ACHIClimate::publish_memory_diagnostics_() {
   last_ms = now;
 
   // Gather metrics (simplified, no heavy allocation)
-  size_t heap_free = ESP.getFreeHeap();
+  size_t heap_free = esp_get_free_heap_size();
   size_t heap_total = 0, heap_used = 0, heap_min_free = 0, heap_max_alloc = 0;
   int heap_frag_pct = -1;
   size_t psram_total = 0, psram_free = 0;
 
-#if defined(ARDUINO_ARCH_ESP32)
-  heap_total     = ESP.getHeapSize();
-  heap_min_free  = ESP.getMinFreeHeap();
-  heap_max_alloc = ESP.getMaxAllocHeap();
-  psram_total    = ESP.getPsramSize();
-  psram_free     = ESP.getFreePsram();
+#if defined(USE_ESP32)
+  heap_total     = heap_caps_get_total_size(MALLOC_CAP_8BIT);
+  heap_min_free  = esp_get_minimum_free_heap_size();
+  heap_max_alloc = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+  psram_total    = heap_caps_get_total_size(MALLOC_CAP_SPIRAM);
+  psram_free     = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
   if (heap_total > heap_free) heap_used = heap_total - heap_free;
   if (heap_free > 0 && heap_max_alloc > 0) {
     double ratio = 1.0 - static_cast<double>(heap_max_alloc) / static_cast<double>(heap_free);
@@ -2980,9 +2982,6 @@ void ACHIClimate::publish_memory_diagnostics_() {
     if (ratio > 1.0) ratio = 1.0;
     heap_frag_pct = static_cast<int>(std::lround(ratio * 100.0));
   }
-#elif defined(ARDUINO_ARCH_ESP8266)
-  heap_max_alloc = ESP.getMaxFreeBlockSize();
-  heap_frag_pct  = ESP.getHeapFragmentation();
 #endif
 
   publish_sensor_if_changed_(heap_free_sensor_, static_cast<float>(heap_free));
@@ -2991,7 +2990,7 @@ void ACHIClimate::publish_memory_diagnostics_() {
   if (heap_min_free > 0) publish_sensor_if_changed_(heap_min_free_sensor_, static_cast<float>(heap_min_free));
   if (heap_max_alloc > 0) publish_sensor_if_changed_(heap_max_alloc_sensor_, static_cast<float>(heap_max_alloc));
   if (heap_frag_pct >= 0) publish_sensor_if_changed_(heap_fragmentation_sensor_, static_cast<float>(heap_frag_pct));
-  if (psram_total > 0) publish_sensor_if_changed_(psram_total_sensor_, static_cast<float>(psram_total));
+  if (psram_total > 0) publish_sensor_if_changed_(heap_total_sensor_ != nullptr ? psram_total_sensor_ : nullptr, static_cast<float>(psram_total));
   if (psram_free > 0) publish_sensor_if_changed_(psram_free_sensor_, static_cast<float>(psram_free));
 #endif
 }
