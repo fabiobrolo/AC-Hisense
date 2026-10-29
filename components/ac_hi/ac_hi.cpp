@@ -2,7 +2,6 @@
 #include <cmath>
 #include <cstdio>
 #include <string>
-//#include <Arduino.h>
 #include <esp_system.h>
 #include <esp_heap_caps.h>
 #include "esphome/core/log.h"
@@ -11,24 +10,11 @@
 #ifdef USE_API
 #include "esphome/components/api/api_server.h"
 #endif
-#ifdef USE_MQTT
-#include "esphome/components/mqtt/mqtt_client.h"
-#endif
 
 namespace esphome {
 namespace ac_hi {
 
 static const char *const TAG = "ac_hi";
-
-static void log_kelon168_data(const char *prefix, const Kelon168Data &data) {
-  char buffer[KELON168_STATE_LENGTH * 3 + 1];
-  size_t pos = 0;
-  for (uint8_t i = 0; i < KELON168_STATE_LENGTH; i++) {
-    pos += snprintf(buffer + pos, sizeof(buffer) - pos, "%02X%s", data.state[i],
-                    i + 1 == KELON168_STATE_LENGTH ? "" : " ");
-  }
-  ESP_LOGI(TAG, "%s Kelon168 IR: %s (command=0x%02X)", prefix, buffer, data.command());
-}
 
 static const char *const CUSTOM_PRESET_QUIET = "Quiet";
 static const char *const CUSTOM_PRESET_HEAT_8C = "+8°C";
@@ -188,7 +174,7 @@ void ACHIClimate::setup() {
   // It only sends raw Wind Mode Code 18 without changing target temperature.
   this->set_supported_custom_fan_modes({CUSTOM_FAN_TURBO});
 
-  // Initial HA‑visible state
+  // Initial HA-visible state
   mode = climate::CLIMATE_MODE_OFF;
   target_temperature = 24;
   fan_mode = climate::CLIMATE_FAN_AUTO;
@@ -238,7 +224,7 @@ void ACHIClimate::setup() {
   // may flood the component and starve ESPHome API/Wi-Fi.
   boot_ms_ = millis();
 
-  // Pre‑reserve buffers to avoid reallocations
+  // Pre-reserve buffers to avoid reallocations
   rx_.reserve(RX_BUFFER_RESERVE);
   last_status_frame_.reserve(MAX_FRAME_BYTES);
   last_tx_frame_.reserve(MAX_FRAME_BYTES);
@@ -305,7 +291,7 @@ void ACHIClimate::loop() {
     rx_start_ = 0;
   }
 
-  // 4. Parse incoming frames (time‑bounded)
+  // 4. Parse incoming frames (time-bounded)
   try_parse_frames_from_buffer_(MAX_PARSE_TIME_MS);
 
   // 5. Release a lost status request. Until this timeout expires, a pending
@@ -607,19 +593,19 @@ void ACHIClimate::control(const climate::ClimateCall &call) {
     if (d_mode_ == climate::CLIMATE_MODE_AUTO) {
       ESP_LOGD(TAG, "Ignoring fan-mode command while SMART/AUTO is active");
     } else {
-    // While Sleep is active, QUIET is controlled by the indoor unit itself.
-    // Remember that this fan change is explicit so the next status parser does
-    // not immediately replace the requested fan with Sleep's QUIET value.
-    sleep_fan_override_pending_ = (sleep_stage_ > 0 || d_sleep_stage_ > 0);
+      // While Sleep is active, QUIET is controlled by the indoor unit itself.
+      // Remember that this fan change is explicit so the next status parser does
+      // not immediately replace the requested fan with Sleep's QUIET value.
+      sleep_fan_override_pending_ = (sleep_stage_ > 0 || d_sleep_stage_ > 0);
 
-    // An explicit fan command supersedes any pending Sleep rollback snapshot.
-    sleep_restore_fan_valid_ = false;
-    d_heat_8c_ = false;
-    heat_8c_restore_valid_ = false;
-    d_fan_ = *call.get_fan_mode();
-    d_fan_turbo_ = false;
-    d_quiet_ = (d_fan_ == climate::CLIMATE_FAN_QUIET);
-    changed = true;
+      // An explicit fan command supersedes any pending Sleep rollback snapshot.
+      sleep_restore_fan_valid_ = false;
+      d_heat_8c_ = false;
+      heat_8c_restore_valid_ = false;
+      d_fan_ = *call.get_fan_mode();
+      d_fan_turbo_ = false;
+      d_quiet_ = (d_fan_ == climate::CLIMATE_FAN_QUIET);
+      changed = true;
     }
   }
 
@@ -639,132 +625,132 @@ void ACHIClimate::control(const climate::ClimateCall &call) {
     } else if (!preset_supported) {
       ESP_LOGW(TAG, "Ignoring unsupported ECO preset (ProductType power_save=0)");
     } else {
-    bool was_turbo = d_turbo_;
-    bool was_eco = d_eco_;
-    bool was_heat_8c = d_heat_8c_;
-    const bool was_sleep = before_sleep_stage > 0 || sleep_stage_ > 0;
-    const auto fan_before_preset = d_fan_;
-    const bool fan_turbo_before_preset = d_fan_turbo_;
-    const bool quiet_before_preset = d_quiet_;
+      bool was_turbo = d_turbo_;
+      bool was_eco = d_eco_;
+      bool was_heat_8c = d_heat_8c_;
+      const bool was_sleep = before_sleep_stage > 0 || sleep_stage_ > 0;
+      const auto fan_before_preset = d_fan_;
+      const bool fan_turbo_before_preset = d_fan_turbo_;
+      const bool quiet_before_preset = d_quiet_;
 
-    // Preserve the pre-Sleep fan snapshot only while leaving an active Sleep
-    // preset through Preset=None. Any other preset/fan choice supersedes it.
-    const bool leaving_sleep_to_none =
-        p == climate::CLIMATE_PRESET_NONE && was_sleep;
-    if (p != climate::CLIMATE_PRESET_SLEEP && !leaving_sleep_to_none) {
-      sleep_restore_fan_valid_ = false;
-    }
-
-    d_eco_ = false;
-    d_turbo_ = false;
-    d_heat_8c_ = false;
-    d_sleep_stage_ = 0;
-    if (p != climate::CLIMATE_PRESET_NONE && was_heat_8c)
-      heat_8c_restore_valid_ = false;
-
-    // Leaving Turbo should restore AUTO fan unless a new preset overrides it.
-    if (was_turbo && p != climate::CLIMATE_PRESET_BOOST) {
-      d_fan_ = climate::CLIMATE_FAN_AUTO;
-    }
-
-    if (p == climate::CLIMATE_PRESET_ECO) {
-      if (!was_eco) {
-        g_pre_eco_target_c = d_target_c_;
-        g_pre_eco_fan = d_fan_;
-        g_has_pre_eco_state = true;
+      // Preserve the pre-Sleep fan snapshot only while leaving an active Sleep
+      // preset through Preset=None. Any other preset/fan choice supersedes it.
+      const bool leaving_sleep_to_none =
+          p == climate::CLIMATE_PRESET_NONE && was_sleep;
+      if (p != climate::CLIMATE_PRESET_SLEEP && !leaving_sleep_to_none) {
+        sleep_restore_fan_valid_ = false;
       }
 
-      d_eco_ = true;
+      d_eco_ = false;
       d_turbo_ = false;
+      d_heat_8c_ = false;
       d_sleep_stage_ = 0;
-      d_fan_turbo_ = false;
-
-      // Match the behavior observed when ECO is enabled from the remote:
-      // target temperature becomes 24°C and fan becomes QUIET.
-      d_target_c_ = 24;
-      d_fan_ = climate::CLIMATE_FAN_QUIET;
-      d_quiet_ = false;
-    } else if (p == climate::CLIMATE_PRESET_BOOST) {
-      if (!was_turbo) {
-        g_pre_turbo_target_c = d_target_c_;
-        g_has_pre_turbo_target = true;
-      }
-
-      d_turbo_ = true;
-      d_fan_turbo_ = false;
-      d_quiet_ = false;
-      if (d_mode_ == climate::CLIMATE_MODE_HEAT) {
-        d_target_c_ = 30;
-        d_fan_ = climate::CLIMATE_FAN_AUTO;
-      } else {
-        d_target_c_ = 16;
-        d_fan_ = climate::CLIMATE_FAN_HIGH;
-      }
-    } else if (p == climate::CLIMATE_PRESET_SLEEP) {
-      // Request the first Sleep program without changing the set temperature.
-      // The UI does not treat this desired value as active Sleep: only a
-      // non-zero Sleep Mode Code in a later status frame can confirm it.
-      // Save the current fan state so it can be restored both when a Sleep
-      // request is rejected and when a successfully activated Sleep is turned off.
-      if (sleep_stage_ == 0) {
-        sleep_restore_fan_ = fan_before_preset;
-        sleep_restore_fan_turbo_ = fan_turbo_before_preset;
-        sleep_restore_quiet_ = quiet_before_preset;
-        sleep_restore_fan_valid_ = true;
-        sleep_restore_led_ = d_led_;
-        sleep_restore_led_valid_ = true;
-        sleep_led_restore_pending_ = false;
-        ESP_LOGD(TAG,
-                 "Sleep request: saved previous fan=%s turbo=%s quiet=%s and LED=%s for restore",
-                 LOG_STR_ARG(climate::climate_fan_mode_to_string(sleep_restore_fan_)),
-                 sleep_restore_fan_turbo_ ? "YES" : "NO",
-                 sleep_restore_quiet_ ? "YES" : "NO",
-                 sleep_restore_led_ ? "ON" : "OFF");
-      } else {
-        // Sleep is already confirmed. Keep the original pre-Sleep fan snapshot
-        // so changing Sleep 1..4 does not lose the value needed on Sleep OFF.
-      }
-
-      // Send only the selected Sleep action. Do not pre-emptively change
-      // Wind/Quiet: a successful indoor-unit Sleep program will report its own
-      // QUIET fan state in the following status frame.
-      d_sleep_stage_ = selected_sleep_stage_;
-    } else if (p == climate::CLIMATE_PRESET_NONE) {
-      if (was_turbo && g_has_pre_turbo_target) {
-        d_target_c_ = g_pre_turbo_target_c;
-        g_has_pre_turbo_target = false;
-      }
-
-      if (was_eco && g_has_pre_eco_state) {
-        d_target_c_ = g_pre_eco_target_c;
-        d_fan_ = g_pre_eco_fan;
-        g_has_pre_eco_state = false;
-      }
-
-      if (was_heat_8c && heat_8c_restore_valid_) {
-        d_power_on_ = heat_8c_restore_power_;
-        d_mode_ = heat_8c_restore_mode_;
-        d_target_c_ = heat_8c_restore_target_c_;
-        d_fan_ = heat_8c_restore_fan_;
-        d_fan_turbo_ = heat_8c_restore_fan_turbo_;
+      if (p != climate::CLIMATE_PRESET_NONE && was_heat_8c)
         heat_8c_restore_valid_ = false;
-        if (memory_mode_enabled_ && d_power_on_ && d_mode_ != climate::CLIMATE_MODE_OFF)
-          last_active_mode_ = d_mode_;
-        ESP_LOGD(TAG, "+8°C disabled: restored power=%s mode=%s target=%u°C fan=%s",
-                 d_power_on_ ? "ON" : "OFF",
-                 LOG_STR_ARG(climate::climate_mode_to_string(d_mode_)),
-                 (unsigned) d_target_c_,
-                 LOG_STR_ARG(climate::climate_fan_mode_to_string(d_fan_)));
+
+      // Leaving Turbo should restore AUTO fan unless a new preset overrides it.
+      if (was_turbo && p != climate::CLIMATE_PRESET_BOOST) {
+        d_fan_ = climate::CLIMATE_FAN_AUTO;
       }
 
-      d_quiet_ = false;
-      // A Sleep OFF action must remain byte-17-only. Let the indoor unit
-      // report the fan it restores after leaving Sleep, then synchronize to it.
-      if (d_fan_ == climate::CLIMATE_FAN_QUIET && !was_eco && !was_sleep)
-        d_fan_ = climate::CLIMATE_FAN_AUTO;
-    }
+      if (p == climate::CLIMATE_PRESET_ECO) {
+        if (!was_eco) {
+          g_pre_eco_target_c = d_target_c_;
+          g_pre_eco_fan = d_fan_;
+          g_has_pre_eco_state = true;
+        }
 
-    changed = true;
+        d_eco_ = true;
+        d_turbo_ = false;
+        d_sleep_stage_ = 0;
+        d_fan_turbo_ = false;
+
+        // Match the behavior observed when ECO is enabled from the remote:
+        // target temperature becomes 24°C and fan becomes QUIET.
+        d_target_c_ = 24;
+        d_fan_ = climate::CLIMATE_FAN_QUIET;
+        d_quiet_ = false;
+      } else if (p == climate::CLIMATE_PRESET_BOOST) {
+        if (!was_turbo) {
+          g_pre_turbo_target_c = d_target_c_;
+          g_has_pre_turbo_target = true;
+        }
+
+        d_turbo_ = true;
+        d_fan_turbo_ = false;
+        d_quiet_ = false;
+        if (d_mode_ == climate::CLIMATE_MODE_HEAT) {
+          d_target_c_ = 30;
+          d_fan_ = climate::CLIMATE_FAN_AUTO;
+        } else {
+          d_target_c_ = 16;
+          d_fan_ = climate::CLIMATE_FAN_HIGH;
+        }
+      } else if (p == climate::CLIMATE_PRESET_SLEEP) {
+        // Request the first Sleep program without changing the set temperature.
+        // The UI does not treat this desired value as active Sleep: only a
+        // non-zero Sleep Mode Code in a later status frame can confirm it.
+        // Save the current fan state so it can be restored both when a Sleep
+        // request is rejected and when a successfully activated Sleep is turned off.
+        if (sleep_stage_ == 0) {
+          sleep_restore_fan_ = fan_before_preset;
+          sleep_restore_fan_turbo_ = fan_turbo_before_preset;
+          sleep_restore_quiet_ = quiet_before_preset;
+          sleep_restore_fan_valid_ = true;
+          sleep_restore_led_ = d_led_;
+          sleep_restore_led_valid_ = true;
+          sleep_led_restore_pending_ = false;
+          ESP_LOGD(TAG,
+                   "Sleep request: saved previous fan=%s turbo=%s quiet=%s and LED=%s for restore",
+                   LOG_STR_ARG(climate::climate_fan_mode_to_string(sleep_restore_fan_)),
+                   sleep_restore_fan_turbo_ ? "YES" : "NO",
+                   sleep_restore_quiet_ ? "YES" : "NO",
+                   sleep_restore_led_ ? "ON" : "OFF");
+        } else {
+          // Sleep is already confirmed. Keep the original pre-Sleep fan snapshot
+          // so changing Sleep 1..4 does not lose the value needed on Sleep OFF.
+        }
+
+        // Send only the selected Sleep action. Do not pre-emptively change
+        // Wind/Quiet: a successful indoor-unit Sleep program will report its own
+        // QUIET fan state in the following status frame.
+        d_sleep_stage_ = selected_sleep_stage_;
+      } else if (p == climate::CLIMATE_PRESET_NONE) {
+        if (was_turbo && g_has_pre_turbo_target) {
+          d_target_c_ = g_pre_turbo_target_c;
+          g_has_pre_turbo_target = false;
+        }
+
+        if (was_eco && g_has_pre_eco_state) {
+          d_target_c_ = g_pre_eco_target_c;
+          d_fan_ = g_pre_eco_fan;
+          g_has_pre_eco_state = false;
+        }
+
+        if (was_heat_8c && heat_8c_restore_valid_) {
+          d_power_on_ = heat_8c_restore_power_;
+          d_mode_ = heat_8c_restore_mode_;
+          d_target_c_ = heat_8c_restore_target_c_;
+          d_fan_ = heat_8c_restore_fan_;
+          d_fan_turbo_ = heat_8c_restore_fan_turbo_;
+          heat_8c_restore_valid_ = false;
+          if (memory_mode_enabled_ && d_power_on_ && d_mode_ != climate::CLIMATE_MODE_OFF)
+            last_active_mode_ = d_mode_;
+          ESP_LOGD(TAG, "+8°C disabled: restored power=%s mode=%s target=%u°C fan=%s",
+                   d_power_on_ ? "ON" : "OFF",
+                   LOG_STR_ARG(climate::climate_mode_to_string(d_mode_)),
+                   (unsigned) d_target_c_,
+                   LOG_STR_ARG(climate::climate_fan_mode_to_string(d_fan_)));
+        }
+
+        d_quiet_ = false;
+        // A Sleep OFF action must remain byte-17-only. Let the indoor unit
+        // report the fan it restores after leaving Sleep, then synchronize to it.
+        if (d_fan_ == climate::CLIMATE_FAN_QUIET && !was_eco && !was_sleep)
+          d_fan_ = climate::CLIMATE_FAN_AUTO;
+      }
+
+      changed = true;
     }  // preset_supported
   }
 
@@ -775,37 +761,37 @@ void ACHIClimate::control(const climate::ClimateCall &call) {
       if (!heat8_supported) {
         ESP_LOGW(TAG, "Ignoring unsupported +8°C preset (ProductType 8heat=0 enable_8heat=0)");
       } else {
-      if (!d_heat_8c_) {
-        heat_8c_restore_valid_ = true;
-        heat_8c_restore_power_ = d_power_on_;
-        heat_8c_restore_mode_ = d_mode_;
-        heat_8c_restore_target_c_ = d_target_c_;
-        heat_8c_restore_fan_ = d_fan_;
-        heat_8c_restore_fan_turbo_ = d_fan_turbo_;
-      }
+        if (!d_heat_8c_) {
+          heat_8c_restore_valid_ = true;
+          heat_8c_restore_power_ = d_power_on_;
+          heat_8c_restore_mode_ = d_mode_;
+          heat_8c_restore_target_c_ = d_target_c_;
+          heat_8c_restore_fan_ = d_fan_;
+          heat_8c_restore_fan_turbo_ = d_fan_turbo_;
+        }
 
-      const bool was_off = !d_power_on_;
-      d_power_on_ = true;
-      d_mode_ = climate::CLIMATE_MODE_HEAT;
-      d_heat_8c_ = true;
-      d_turbo_ = false;
-      d_eco_ = false;
-      d_quiet_ = false;
-      d_sleep_stage_ = 0;
-      d_fan_turbo_ = false;
-      d_fan_ = climate::CLIMATE_FAN_AUTO;
-      sleep_restore_fan_valid_ = false;
+        const bool was_off = !d_power_on_;
+        d_power_on_ = true;
+        d_mode_ = climate::CLIMATE_MODE_HEAT;
+        d_heat_8c_ = true;
+        d_turbo_ = false;
+        d_eco_ = false;
+        d_quiet_ = false;
+        d_sleep_stage_ = 0;
+        d_fan_turbo_ = false;
+        d_fan_ = climate::CLIMATE_FAN_AUTO;
+        sleep_restore_fan_valid_ = false;
 
-      if (was_off && !d_led_) {
-        d_led_ = true;
-        led_command_pending_ = true;
-      }
-      if (memory_mode_enabled_) last_active_mode_ = climate::CLIMATE_MODE_HEAT;
+        if (was_off && !d_led_) {
+          d_led_ = true;
+          led_command_pending_ = true;
+        }
+        if (memory_mode_enabled_) last_active_mode_ = climate::CLIMATE_MODE_HEAT;
 
-      ESP_LOGD(TAG,
-               "+8°C requested: HEAT frost protection, command byte[37]=0x03; normal target %u°C preserved",
-               (unsigned) d_target_c_);
-      changed = true;
+        ESP_LOGD(TAG,
+                 "+8°C requested: HEAT frost protection, command byte[37]=0x03; normal target %u°C preserved",
+                 (unsigned) d_target_c_);
+        changed = true;
       }  // heat8_supported
     } else if (custom == CUSTOM_PRESET_QUIET) {
       if (d_mode_ == climate::CLIMATE_MODE_AUTO) {
@@ -813,16 +799,16 @@ void ACHIClimate::control(const climate::ClimateCall &call) {
       } else if (capabilities_.valid && !capabilities_.fan_mute) {
         ESP_LOGW(TAG, "Ignoring unsupported Quiet preset (ProductType fan_mute=0)");
       } else {
-      sleep_restore_fan_valid_ = false;
-      d_heat_8c_ = false;
-      heat_8c_restore_valid_ = false;
-      d_quiet_ = true;
-      d_turbo_ = false;
-      d_eco_ = false;
-      d_sleep_stage_ = 0;
-      d_fan_turbo_ = false;
-      d_fan_ = climate::CLIMATE_FAN_QUIET;
-      changed = true;
+        sleep_restore_fan_valid_ = false;
+        d_heat_8c_ = false;
+        heat_8c_restore_valid_ = false;
+        d_quiet_ = true;
+        d_turbo_ = false;
+        d_eco_ = false;
+        d_sleep_stage_ = 0;
+        d_fan_turbo_ = false;
+        d_fan_ = climate::CLIMATE_FAN_QUIET;
+        changed = true;
       }  // Quiet supported
     }
   }
@@ -1084,280 +1070,6 @@ void ACHIClimate::send_write_changes_() {
   write_lock_time_ = millis();
 }
 
-// ---- IR iFeel / Follow Me over Kelon168 ----
-uint8_t ACHIClimate::encode_kelon_mode_(climate::ClimateMode mode) const {
-  switch (mode) {
-    case climate::CLIMATE_MODE_HEAT:
-      return KELON168_MODE_HEAT;
-    case climate::CLIMATE_MODE_COOL:
-      return KELON168_MODE_COOL;
-    case climate::CLIMATE_MODE_DRY:
-      return KELON168_MODE_DRY;
-    case climate::CLIMATE_MODE_FAN_ONLY:
-      return KELON168_MODE_FAN;
-    case climate::CLIMATE_MODE_AUTO:
-      return KELON168_MODE_AUTO;
-    default:
-      return KELON168_MODE_AUTO;
-  }
-}
-
-void ACHIClimate::set_kelon_fan_(Kelon168Data *data, climate::ClimateFanMode fan_mode, bool turbo_fan) const {
-  // Fan mode in Kelon168 IR frames is split between state[2] bits 0..1
-  // and state[17] bit 0x40. The mapping below is based on captures from
-  // this Hisense indoor unit while sending vertical/horizontal swing commands,
-  // i.e. frames where fan mode is preserved rather than cycled by the Fan key:
-  //   AUTO   -> state[2] = 0, state[17]&0x40 = 0
-  //   TURBO  -> state[2] = 1, state[17]&0x40 = 0
-  //   HIGH   -> state[2] = 1, state[17]&0x40 = 1
-  //   MEDIUM -> state[2] = 2, state[17]&0x40 = 0
-  //   LOW    -> state[2] = 3, state[17]&0x40 = 1
-  //   QUIET  -> state[2] = 3, state[17]&0x40 = 0
-  data->state[2] &= ~0x03;
-  data->state[17] &= ~0x40;
-
-  if (turbo_fan) {
-    data->state[2] |= 0x01;
-    return;
-  }
-
-  switch (fan_mode) {
-    case climate::CLIMATE_FAN_LOW:
-      data->state[2] |= 0x03;
-      data->state[17] |= 0x40;
-      break;
-    case climate::CLIMATE_FAN_MEDIUM:
-      data->state[2] |= 0x02;
-      break;
-    case climate::CLIMATE_FAN_HIGH:
-      data->state[2] |= 0x01;
-      data->state[17] |= 0x40;
-      break;
-    case climate::CLIMATE_FAN_QUIET:
-      data->state[2] |= 0x03;
-      break;
-    case climate::CLIMATE_FAN_AUTO:
-    default:
-      break;
-  }
-}
-
-Kelon168Data ACHIClimate::build_kelon_state_from_current_(uint8_t command) const {
-  auto data = Kelon168Protocol::make_default();
-
-  // Prefer the real state parsed from UART. Before the first status frame arrives,
-  // fall back to the HA desired state so iFeel still has a sane base frame.
-  const bool have_actual = !this->last_status_frame_.empty();
-  const bool base_power = have_actual ? this->power_on_ : this->d_power_on_;
-  auto base_mode = have_actual ? this->mode_ : this->d_mode_;
-  // SMART branch 7 was observed during dehumidification. Preserve SMART in
-  // Follow-Me/iFeel frames for every raw SMART branch (4..7); otherwise an
-  // iFeel update built from a misclassified branch can switch the unit to a
-  // normal COOL command and later provoke an unnecessary AUTO re-command.
-  if (have_actual && this->raw_mode_code_ >= 0x04 && this->raw_mode_code_ <= 0x07)
-    base_mode = climate::CLIMATE_MODE_AUTO;
-  auto base_fan = have_actual ? this->fan_ : this->d_fan_;
-  const bool base_fan_turbo = have_actual ? this->fan_turbo_ : this->d_fan_turbo_;
-  auto base_swing = have_actual ? this->swing_ : this->d_swing_;
-  const bool base_boost = have_actual ? this->turbo_ : this->d_turbo_;
-  const uint8_t base_sleep_stage = have_actual ? this->sleep_stage_ : this->d_sleep_stage_;
-  uint8_t base_target = have_actual ? this->target_c_ : this->d_target_c_;
-
-  if (!base_power && base_mode == climate::CLIMATE_MODE_OFF) {
-    // The unit ignores climate fields in iFeel frames, but OFF has no native Kelon168
-    // mode. Keep a neutral COOL/24 base if someone calls the action too early.
-    base_mode = climate::CLIMATE_MODE_COOL;
-    base_fan = climate::CLIMATE_FAN_AUTO;
-    base_swing = climate::CLIMATE_SWING_OFF;
-    base_target = 24;
-  }
-
-  base_target = std::max<uint8_t>(16, std::min<uint8_t>(30, base_target));
-  const uint8_t native_mode = this->encode_kelon_mode_(base_mode);
-
-  data.state[2] = 0x00;
-  if (base_sleep_stage > 0)
-    data.state[2] |= 0x08;
-  if (base_swing == climate::CLIMATE_SWING_VERTICAL || base_swing == climate::CLIMATE_SWING_BOTH)
-    data.state[2] |= 0x80;
-
-  this->set_kelon_fan_(&data, base_fan, base_fan_turbo);
-  data.state[3] = static_cast<uint8_t>((native_mode & 0x07) | ((base_target - 16) << 4));
-
-  if (base_boost)
-    data.state[5] |= 0x90;
-  if (base_swing == climate::CLIMATE_SWING_VERTICAL || base_swing == climate::CLIMATE_SWING_BOTH)
-    data.state[8] |= 0x40;
-  if (base_swing == climate::CLIMATE_SWING_HORIZONTAL || base_swing == climate::CLIMATE_SWING_BOTH)
-    data.state[8] |= 0x80;
-
-  data.state[11] = this->ifeel_enabled_ ? KELON168_FOLLOW_ME_ENABLED : 0x00;
-  data.state[12] = this->ifeel_enabled_ ? this->ifeel_temperature_ : 0x00;
-  data.state[15] = command;
-  Kelon168Protocol::checksum(&data);
-  return data;
-}
-
-Kelon168Data ACHIClimate::build_ifeel_state_(uint8_t temperature, bool enabled, bool update) const {
-  auto data = this->build_kelon_state_from_current_(update ? KELON168_COMMAND_LIGHT : KELON168_COMMAND_IFEEL);
-
-  // These bytes match the captured Kelon168 FollowMe frames from the donor IR project.
-  // The rest of the frame is built from the current UART state so normal AC settings
-  // are preserved as much as the protocol allows.
-  data.state[6] = update ? 0x08 : 0x87;
-  data.state[7] = update ? 0x03 : 0x3B;
-
-  // Important: keep iFeel frames neutral for louvers. On this indoor unit the
-  // swing bits (state[2] bit 0x80 and state[8] bits 0x40/0x80) are safe in
-  // dedicated swing commands, but if they are also present in an iFeel/follow-me
-  // frame the unit may treat the frame as a louver command and stop active swing.
-  // So iFeel preserves fan/mode/temperature, but does not encode vertical or
-  // horizontal swing bits at all. Existing louver motion is left untouched.
-  data.state[2] &= ~0x80;
-  data.state[8] &= ~0xC0;
-
-  data.state[11] = enabled ? KELON168_FOLLOW_ME_ENABLED : 0x00;
-  data.state[12] = enabled ? temperature : 0x00;
-  data.state[15] = update ? KELON168_COMMAND_LIGHT : KELON168_COMMAND_IFEEL;
-  Kelon168Protocol::checksum(&data);
-  return data;
-}
-
-std::string ACHIClimate::kelon168_to_hex_(const Kelon168Data &data) const {
-  char buffer[KELON168_STATE_LENGTH * 3 + 1];
-  size_t pos = 0;
-  for (uint8_t i = 0; i < KELON168_STATE_LENGTH; i++) {
-    pos += snprintf(buffer + pos, sizeof(buffer) - pos, "%02X%s", data.state[i],
-                    i + 1 == KELON168_STATE_LENGTH ? "" : " ");
-  }
-  return std::string(buffer);
-}
-
-std::string ACHIClimate::kelon168_to_json_(const Kelon168Data &data, const char *kind, bool enabled,
-                                            uint8_t temperature) const {
-  std::string bytes = this->kelon168_to_hex_(data);
-  char payload[256];
-  snprintf(payload, sizeof(payload),
-           "{\"protocol\":\"kelon168\",\"kind\":\"%s\",\"command\":\"0x%02X\",\"enabled\":%s,\"temperature\":%u,\"bytes\":\"%s\"}",
-           kind, data.command(), enabled ? "true" : "false", static_cast<unsigned>(temperature), bytes.c_str());
-  return std::string(payload);
-}
-
-bool ACHIClimate::transmit_kelon_ir_(const Kelon168Data &data) {
-  if (this->ir_transmitter_ == nullptr)
-    return false;
-
-  auto transmit = this->ir_transmitter_->transmit();
-  Kelon168Protocol().encode(transmit.get_data(), data);
-  log_kelon168_data("Sending", data);
-  transmit.perform();
-  return true;
-}
-
-bool ACHIClimate::publish_kelon_mqtt_(const Kelon168Data &data, const char *kind, bool enabled, uint8_t temperature) {
-  if (this->ifeel_mqtt_topic_.empty())
-    return false;
-
-#ifndef USE_MQTT
-  ESP_LOGW(TAG, "iFeel MQTT topic is configured, but ESPHome mqtt: component is not enabled");
-  return false;
-#else
-  if (mqtt::global_mqtt_client == nullptr || !mqtt::global_mqtt_client->is_connected()) {
-    ESP_LOGW(TAG, "iFeel MQTT command not published because MQTT is not connected");
-    return false;
-  }
-
-  const std::string payload =
-      (this->ifeel_mqtt_payload_format_ == IFEEL_MQTT_PAYLOAD_JSON)
-          ? this->kelon168_to_json_(data, kind, enabled, temperature)
-          : this->kelon168_to_hex_(data);
-
-  const bool ok = mqtt::global_mqtt_client->publish(this->ifeel_mqtt_topic_, payload,
-                                                    this->ifeel_mqtt_qos_, this->ifeel_mqtt_retain_);
-  if (ok) {
-    ESP_LOGI(TAG, "Published iFeel Kelon168 %s to MQTT topic '%s': %s", kind,
-             this->ifeel_mqtt_topic_.c_str(), payload.c_str());
-  } else {
-    ESP_LOGW(TAG, "Failed to publish iFeel Kelon168 %s to MQTT topic '%s'", kind,
-             this->ifeel_mqtt_topic_.c_str());
-  }
-  return ok;
-#endif
-}
-
-void ACHIClimate::emit_kelon_ifeel_(Kelon168Data data, const char *kind, bool enabled, uint8_t temperature) {
-  Kelon168Protocol::checksum(&data);
-  const bool sent_ir = this->transmit_kelon_ir_(data);
-  const bool published_mqtt = this->publish_kelon_mqtt_(data, kind, enabled, temperature);
-
-  if (!sent_ir && !published_mqtt) {
-    ESP_LOGW(TAG, "iFeel Kelon168 command was formed but not sent: configure ir_transmitter_id and/or ifeel_mqtt_topic");
-  }
-}
-
-void ACHIClimate::send_ifeel(float temperature, bool enabled) {
-  const bool have_actual = !this->last_status_frame_.empty();
-  const bool is_on = have_actual ? this->power_on_ : this->d_power_on_;
-
-  if (!is_on) {
-    this->ifeel_enabled_ = false;
-    this->ifeel_temperature_ = 0;
-    ESP_LOGD(TAG, "Skipping iFeel IR command because AC is off");
-    return;
-  }
-
-  uint8_t temp_c = this->ifeel_temperature_;
-  if (enabled) {
-    if (!std::isfinite(temperature)) {
-      ESP_LOGW(TAG, "Skipping iFeel IR command because temperature is unavailable");
-      return;
-    }
-    int rounded = static_cast<int>(std::lround(temperature));
-    rounded = std::max(0, std::min(50, rounded));
-    temp_c = static_cast<uint8_t>(rounded);
-  }
-
-  const bool state_changed = this->ifeel_enabled_ != enabled;
-  this->ifeel_enabled_ = enabled;
-  this->ifeel_temperature_ = enabled ? temp_c : 0;
-
-  ESP_LOGD(TAG, "iFeel IR: enabled=%s temperature=%u°C state_changed=%s",
-           enabled ? "true" : "false", static_cast<unsigned>(this->ifeel_temperature_),
-           state_changed ? "true" : "false");
-
-  if (!enabled) {
-    // Always send OFF when requested. After reboot we may not know whether the remote
-    // had previously enabled iFeel, so a forced OFF frame is safer than relying on memory.
-    auto off = this->build_ifeel_state_(0, false, false);
-    this->emit_kelon_ifeel_(off, "off", false, 0);
-    return;
-  }
-
-  if (state_changed) {
-    // The dedicated iFeel ON/OFF command (0x0D) is acknowledged by this indoor
-    // unit with a beep and may also wake the front display. The temperature
-    // update frame (0x00) with FollowMe enabled is accepted by the unit as a
-    // silent FollowMe/iFeel update. Therefore, when the user has disabled
-    // command sound or wants the display to stay off, do not send the noisy
-    // 0x0D ON frame; send only the silent update below.
-    const bool allow_audible_ifeel_on = this->command_sound_enabled_ && this->d_led_;
-    if (allow_audible_ifeel_on) {
-      auto on = this->build_ifeel_state_(this->ifeel_temperature_, true, false);
-      this->emit_kelon_ifeel_(on, "on", true, this->ifeel_temperature_);
-    } else {
-      ESP_LOGI(TAG,
-               "Skipping audible/display iFeel ON frame; using silent update only "
-               "(command_sound=%s, led=%s)",
-               this->command_sound_enabled_ ? "ON" : "OFF", this->d_led_ ? "ON" : "OFF");
-    }
-  }
-
-  // While enabled, send an update frame every time the action is called so the AC
-  // receives the current external temperature from HA/ESPHome.
-  auto update = this->build_ifeel_state_(this->ifeel_temperature_, true, true);
-  this->emit_kelon_ifeel_(update, "update", true, this->ifeel_temperature_);
-}
-
 // ---- CRC calculation ----
 void ACHIClimate::calc_and_patch_crc_(std::vector<uint8_t> &buf) {
   size_t n = buf.size();
@@ -1520,7 +1232,7 @@ bool ACHIClimate::extract_next_frame_(std::vector<uint8_t> &frame) {
           }
 
           ESP_LOGW(TAG,
-                   "Frame length mismatch after unstuffing: declared=%u logical=%u wire=%u", 
+                   "Frame length mismatch after unstuffing: declared=%u logical=%u wire=%u",
                    (unsigned) expected_logical_size, (unsigned) frame.size(),
                    (unsigned) (wire_pos - frame_start));
           invalid = true;
@@ -1703,9 +1415,8 @@ void ACHIClimate::apply_capability_availability_() {
   publish_state();
 }
 
-
 void ACHIClimate::process_timer_event_(ACHITimerState &state, const char *name,
-                                            uint8_t raw_hour, uint8_t raw_minute_status) {
+                                       uint8_t raw_hour, uint8_t raw_minute_status) {
   // The timer fields are bit-packed MSB first. This explains the verified
   // 1-hour sample 0x0B/0x01: 0x0B >> 3 = 1 hour, 0x01 >> 2 = 0 minutes,
   // and bit 0 = enabled.
@@ -1756,7 +1467,7 @@ void ACHIClimate::process_timer_event_(ACHITimerState &state, const char *name,
 }
 
 void ACHIClimate::clear_timer_after_silence_(ACHITimerState &state, const char *name,
-                                                   uint8_t raw_hour, uint8_t raw_minute_status) {
+                                             uint8_t raw_hour, uint8_t raw_minute_status) {
   // 00/00 is used both as ordinary status silence and after a physical-remote
   // cancellation, so a single zero frame cannot clear a timer. The indoor
   // unit refreshes an active timer periodically (observed about every 32 s).
@@ -2618,17 +2329,6 @@ void ACHIClimate::publish_gated_state_() {
 }
 
 void ACHIClimate::update_led_switch_state_() {
-  // Dependency: when the display switch is OFF, command sound must stay ON.
-  // With this indoor unit, keeping the display off during user climate commands
-  // requires sending LED_OFF, and that action can itself make the unit beep.
-
-  // I don't need it. Want quit and dark!
-  // if (!d_led_ && !command_sound_enabled_) {
-  //   command_sound_enabled_ = true;
-  //   ESP_LOGD(TAG, "Command sound forced ON because display switch is OFF");
-  //   update_sound_switch_state_();
-  // }
-
   if (led_switch_ == nullptr) return;
   led_switch_->publish_state(d_led_);
 }
@@ -2844,15 +2544,6 @@ void ACHIClimate::set_desired_led(bool on) {
   }
   sleep_led_restore_pending_ = false;
 
-  // Dependency: turning the display OFF also turns command sound ON.
-  // This keeps HA from showing an unsupported combination for this protocol.
-  // I don't need it. Want quit and dark!
-  // if (!on && !command_sound_enabled_) {
-  //   command_sound_enabled_ = true;
-  //   ESP_LOGD(TAG, "Command sound forced ON because display switch was turned OFF");
-  //   update_sound_switch_state_();
-  // }
-
   led_command_pending_ = true;
   pending_command_fields_ |= CMD_FIELD_LED;
   accept_remote_changes_ = false;
@@ -2866,10 +2557,9 @@ void ACHIClimate::set_desired_led(bool on) {
 
   ESP_LOGD(TAG, "LED switch: desired_led=%s, command_sound=%s, pending write",
            on ? "ON" : "OFF", command_sound_enabled_ ? "ON" : "OFF");
-  // update_led_switch_state_() will be called from loop after publish
 }
 
-// ---- External command sound control ----
+// ---- External command sound & memory control ----
 void ACHIClimate::set_memory_mode_enabled(bool on) {
   memory_mode_enabled_ = on;
 
@@ -2892,17 +2582,6 @@ void ACHIClimate::set_memory_mode_enabled(bool on) {
 }
 
 void ACHIClimate::set_command_sound_enabled(bool on) {
-  // I don't need it. Want quit and dark!
-  // if (!on && !d_led_) {
-  //   // The display is currently desired OFF. In this state user commands need
-  //   // LED_OFF to keep the panel dark, and LED_OFF is audible on this unit.
-  //   // Keep the sound switch ON so the UI reflects the real supported state.
-  //   command_sound_enabled_ = true;
-  //   update_sound_switch_state_();
-  //   ESP_LOGD(TAG, "Command sound stays ON while display switch is OFF");
-  //   return;
-  // }
-
   command_sound_enabled_ = on;
   update_sound_switch_state_();
   ESP_LOGD(TAG, "Command sound: %s", on ? "ON" : "OFF");
@@ -2990,7 +2669,7 @@ void ACHIClimate::publish_memory_diagnostics_() {
   if (heap_min_free > 0) publish_sensor_if_changed_(heap_min_free_sensor_, static_cast<float>(heap_min_free));
   if (heap_max_alloc > 0) publish_sensor_if_changed_(heap_max_alloc_sensor_, static_cast<float>(heap_max_alloc));
   if (heap_frag_pct >= 0) publish_sensor_if_changed_(heap_fragmentation_sensor_, static_cast<float>(heap_frag_pct));
-  if (psram_total > 0) publish_sensor_if_changed_(heap_total_sensor_ != nullptr ? psram_total_sensor_ : nullptr, static_cast<float>(psram_total));
+  if (psram_total > 0) publish_sensor_if_changed_(psram_total_sensor_, static_cast<float>(psram_total));
   if (psram_free > 0) publish_sensor_if_changed_(psram_free_sensor_, static_cast<float>(psram_free));
 #endif
 }
