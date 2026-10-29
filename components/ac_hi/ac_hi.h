@@ -7,9 +7,6 @@
 #include "esphome/core/gpio.h"
 #include "esphome/components/switch/switch.h"
 #include "esphome/components/select/select.h"
-#include "esphome/components/remote_base/remote_base.h"
-#include "esphome/core/automation.h"
-#include "kelon168_protocol.h"
 
 #ifdef USE_SENSOR
   #include "esphome/components/sensor/sensor.h"
@@ -69,11 +66,6 @@ struct ACHITimerState {
   uint32_t last_event_ms{0};
 };
 
-enum ACHIIFeelMqttPayloadFormat : uint8_t {
-  IFEEL_MQTT_PAYLOAD_HEX = 0,
-  IFEEL_MQTT_PAYLOAD_JSON = 1,
-};
-
 // Simple switch that controls desired LED flag
 class ACHILEDTargetSwitch : public switch_::Switch {
  public:
@@ -120,8 +112,6 @@ static constexpr uint8_t HI_HDR0 = 0xF4;
 static constexpr uint8_t HI_HDR1 = 0xF5;
 static constexpr uint8_t HI_TAIL0 = 0xF4;
 static constexpr uint8_t HI_TAIL1 = 0xFB;
-static constexpr uint8_t KELON168_FOLLOW_ME_ENABLED = 0x80;
-
 
 // Indexes of interesting bytes in the frame (0-based)
 enum FrameIndex : uint8_t {
@@ -199,37 +189,37 @@ enum CommandFieldMask : uint16_t {
 
 // Bit masks within specific bytes
 enum BitMasks : uint8_t {
-  POWER_MASK      = 0b00001000,
+  POWER_MASK       = 0b00001000,
   MODE_NIBBLE_MASK = 0b11110000,
-  TURBO_MASK      = 0b00000010,   // in byte 35
-  ECO_MASK        = 0b00000100,   // in byte 35
-  QUIET_MASK      = 0b00000100,   // in byte 36
-  LED_MASK        = 0b10000000,   // in byte 37
-  UPDOWN_MASK     = 0b10000000,   // in byte 35
-  LEFTRIGHT_MASK  = 0b01000000,   // in byte 35
+  TURBO_MASK       = 0b00000010,   // in byte 35
+  ECO_MASK         = 0b00000100,   // in byte 35
+  QUIET_MASK       = 0b00000100,   // in byte 36
+  LED_MASK         = 0b10000000,   // in byte 37
+  UPDOWN_MASK      = 0b10000000,   // in byte 35
+  LEFTRIGHT_MASK   = 0b01000000,   // in byte 35
 };
 
 // Values for turbo/eco/quiet encoding (matching legacy YAML)
 namespace TxValues {
-  constexpr uint8_t BEEP_ON   = 0x04;
-  constexpr uint8_t BEEP_OFF  = 0x00;
-  constexpr uint8_t TURBO_ON  = 0b00001100;
-  constexpr uint8_t TURBO_OFF = 0b00000100;
-  constexpr uint8_t ECO_ON    = 0b00110000;
-  constexpr uint8_t ECO_OFF   = 0b00010000;
-  constexpr uint8_t QUIET_ON  = 0b00110000;
-  constexpr uint8_t QUIET_OFF = 0b00010000;
-  constexpr uint8_t UPDOWN_ON = 0b11000000;
-  constexpr uint8_t UPDOWN_OFF = 0b01000000;
-  constexpr uint8_t LEFTRIGHT_ON = 0b00110000;
+  constexpr uint8_t BEEP_ON       = 0x04;
+  constexpr uint8_t BEEP_OFF      = 0x00;
+  constexpr uint8_t TURBO_ON      = 0b00001100;
+  constexpr uint8_t TURBO_OFF     = 0b00000100;
+  constexpr uint8_t ECO_ON        = 0b00110000;
+  constexpr uint8_t ECO_OFF       = 0b00010000;
+  constexpr uint8_t QUIET_ON      = 0b00110000;
+  constexpr uint8_t QUIET_OFF     = 0b00010000;
+  constexpr uint8_t UPDOWN_ON     = 0b11000000;
+  constexpr uint8_t UPDOWN_OFF    = 0b01000000;
+  constexpr uint8_t LEFTRIGHT_ON  = 0b00110000;
   constexpr uint8_t LEFTRIGHT_OFF = 0b00010000;
-  constexpr uint8_t LED_ON   = 0b11000000;
-  constexpr uint8_t LED_OFF  = 0b01000000;
-  constexpr uint8_t HEAT_8C_ON  = 0x03;
-  constexpr uint8_t HEAT_8C_OFF = 0x01;
+  constexpr uint8_t LED_ON        = 0b11000000;
+  constexpr uint8_t LED_OFF       = 0b01000000;
+  constexpr uint8_t HEAT_8C_ON    = 0x03;
+  constexpr uint8_t HEAT_8C_OFF   = 0x01;
 }
 
-// Limits for non‑blocking operation
+// Limits for non-blocking operation
 static constexpr uint8_t  MAX_FRAMES_PER_LOOP = 2;
 static constexpr uint32_t MAX_PARSE_TIME_MS   = 20;
 static constexpr size_t   RX_COMPACT_THRESHOLD = 512;
@@ -279,16 +269,6 @@ class ACHIClimate : public climate::Climate, public PollingComponent, public uar
     if (sleep_program_select_ != nullptr) sleep_program_select_->set_parent(this);
   }
   void set_sleep_program(const std::string &value);
-  void set_ir_transmitter(remote_base::RemoteTransmitterBase *t) { ir_transmitter_ = t; }
-  void set_ifeel_mqtt_topic(const std::string &topic) { ifeel_mqtt_topic_ = topic; }
-  void set_ifeel_mqtt_payload_format(const std::string &format) {
-    ifeel_mqtt_payload_format_ = (format == "json") ? IFEEL_MQTT_PAYLOAD_JSON : IFEEL_MQTT_PAYLOAD_HEX;
-  }
-  void set_ifeel_mqtt_qos(uint8_t qos) { ifeel_mqtt_qos_ = qos > 2 ? 0 : qos; }
-  void set_ifeel_mqtt_retain(bool retain) { ifeel_mqtt_retain_ = retain; }
-
-  // Send/clear iFeel (Follow Me) over Kelon168 IR while UART climate remains the source of truth.
-  void send_ifeel(float temperature, bool enabled);
 
 #ifdef USE_SENSOR
   void set_set_temperature_sensor(sensor::Sensor *s) { set_temp_sensor_ = s; }
@@ -359,16 +339,6 @@ class ACHIClimate : public climate::Climate, public PollingComponent, public uar
   void send_query_capabilities_();
   void send_write_changes_();
 
-  // IR iFeel helpers
-  Kelon168Data build_kelon_state_from_current_(uint8_t command) const;
-  Kelon168Data build_ifeel_state_(uint8_t temperature, bool enabled, bool update) const;
-  bool transmit_kelon_ir_(const Kelon168Data &data);
-  bool publish_kelon_mqtt_(const Kelon168Data &data, const char *kind, bool enabled, uint8_t temperature);
-  void emit_kelon_ifeel_(Kelon168Data data, const char *kind, bool enabled, uint8_t temperature);
-  std::string kelon168_to_hex_(const Kelon168Data &data) const;
-  std::string kelon168_to_json_(const Kelon168Data &data, const char *kind, bool enabled, uint8_t temperature) const;
-  void set_kelon_fan_(Kelon168Data *data, climate::ClimateFanMode fan_mode, bool turbo_fan) const;
-  uint8_t encode_kelon_mode_(climate::ClimateMode mode) const;
   void calc_and_patch_crc_(std::vector<uint8_t> &buf);
   bool validate_crc_(const std::vector<uint8_t> &buf, uint16_t *out_sum = nullptr) const;
   std::vector<uint8_t> encode_wire_frame_(const std::vector<uint8_t> &logical) const;
@@ -408,8 +378,8 @@ class ACHIClimate : public climate::Climate, public PollingComponent, public uar
 #endif
   void remember_target_for_mode_(climate::ClimateMode mode, uint8_t target_c);
   uint8_t target_for_mode_(climate::ClimateMode mode, uint8_t fallback) const;
-  void maybe_force_to_target_();                     // <-- добавлено объявление
-  void maybe_send_pending_control_();                // (опционально, если используется)
+  void maybe_force_to_target_();
+  void maybe_send_pending_control_();
 
   // Signatures for convergence detection
   uint32_t compute_control_signature_(bool power, climate::ClimateMode mode,
@@ -448,7 +418,7 @@ class ACHIClimate : public climate::Climate, public PollingComponent, public uar
     if (re_pin_ != nullptr) re_pin_->digital_write(tx);
   }
   bool writing_lock_{false};
-  uint32_t write_lock_time_{0};               // when lock was set
+  uint32_t write_lock_time_{0};                // when lock was set
 
   // A status request and a write command must never share the RS-485 bus window.
   // While waiting for the 0x66 response, debounced 0x65 writes remain pending.
@@ -520,15 +490,6 @@ class ACHIClimate : public climate::Climate, public PollingComponent, public uar
   // instead of accepting Home Assistant's first-supported-mode fallback.
   bool memory_mode_enabled_{false};
 
-  // Optional Kelon168 IR/MQTT output for iFeel / Follow Me commands.
-  remote_base::RemoteTransmitterBase *ir_transmitter_{nullptr};
-  std::string ifeel_mqtt_topic_{};
-  ACHIIFeelMqttPayloadFormat ifeel_mqtt_payload_format_{IFEEL_MQTT_PAYLOAD_HEX};
-  uint8_t ifeel_mqtt_qos_{0};
-  bool ifeel_mqtt_retain_{false};
-  bool ifeel_enabled_{false};
-  uint8_t ifeel_temperature_{0};
-
   // Byte 36 in TX is an action-style display command, not a stable state field.
   // Keep it neutral for normal climate writes so repeated silent retries do not
   // re-send the display OFF command and make the indoor unit beep.
@@ -580,7 +541,7 @@ class ACHIClimate : public climate::Climate, public PollingComponent, public uar
   // ----- Actual (parsed from AC) state -----
   bool power_on_{false};
   uint8_t target_c_{24};                // 16..30 °C (ESPHome internal unit)
-  bool temp_unit_f_{false};              // display/wire unit reported in status byte 26 bit 1
+  bool temp_unit_f_{false};             // display/wire unit reported in status byte 26 bit 1
   bool temp_unit_known_{false};
   climate::ClimateMode mode_{climate::CLIMATE_MODE_OFF};
   // Raw upper-nibble status value. SMART/AUTO uses 4/5/6/7 to expose the
@@ -695,21 +656,6 @@ class ACHIClimate : public climate::Climate, public PollingComponent, public uar
   std::vector<uint8_t> last_status_frame_;
   std::vector<uint8_t> last_tx_frame_;
 };
-
-template<typename... Ts> class ACHIIFeelAction : public Action<Ts...> {
- public:
-  explicit ACHIIFeelAction(ACHIClimate *parent) : parent_(parent) {}
-  TEMPLATABLE_VALUE(float, temperature)
-  TEMPLATABLE_VALUE(bool, enabled)
-
- protected:
-  void play(const Ts &...x) override {
-    this->parent_->send_ifeel(this->temperature_.value(x...), this->enabled_.value_or(x..., true));
-  }
-
-  ACHIClimate *parent_;
-};
-
 
 }  // namespace ac_hi
 }  // namespace esphome
